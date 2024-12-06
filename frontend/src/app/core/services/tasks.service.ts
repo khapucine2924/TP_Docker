@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core'
 import { HttpClient } from '@angular/common/http'
 import { Task } from '../models'
 
-const URL = 'http://localhost:5000/api/v1'
+const URL = '/api/v1'
 
 @Injectable({
   providedIn: 'root',

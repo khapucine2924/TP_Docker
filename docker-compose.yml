@@ -1,0 +1,168 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: dockerfile-backend
+    environment:
+      FLASK_ENV: development
+    volumes:
+      - ./backend:/app
+      - ./backend/venv:/app/venv
+    networks:
+      - backend_network
+    depends_on:
+      db_myapp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://backend:5000/api/v1/tasks"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: dockerfile-frontend  
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - frontend_network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://frontend:4200"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx_container
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - frontend_network
+      - backend_network
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  db_myapp:
+    image: mysql:latest
+    environment:
+      MYSQL_DATABASE: "${MYSQL_DATABASE}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      MYSQL_USER: "${MYSQL_USERNAME}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
+    volumes:
+      - db_MySQL:/var/lib/mysql
+    env_file:
+      - ./.env
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - backend_network
+
+  phpmyadmin_myapp:
+    image: phpmyadmin:latest
+    restart: always
+    environment:
+      PMA_HOST: db_myapp
+    ports:
+      - "8081:80"
+    depends_on:
+      db_myapp:
+        condition: service_healthy
+    networks:
+      - backend_network
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.15.2
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
+      - ./logs/nginx:/var/log/nginx
+    ports:
+      - "5044:5044"
+    networks:
+      - backend_network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.15.2
+    environment:
+      - discovery.type=single-node
+    ports:
+      - "9200:9200"
+    networks:
+      - backend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+  
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.15.2
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+    networks:
+      - backend_network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+    - ./scripts/entrypoint.sh:/entrypoint.sh
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - backend_network
+
+  cadvisor:
+    image: google/cadvisor:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /sys:/sys
+      - /var/lib/docker/:/var/lib/docker
+    ports:
+      - "8080:8080"
+    networks:
+      - backend_network
+      
+networks:
+  frontend_network:
+    driver: bridge
+  backend_network:
+    driver: bridge
+
+volumes:
+  db_MySQL:
+  prometheus_data:
+  es_data:

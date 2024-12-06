@@ -1,0 +1,18 @@
+# Utiliser une image de base Node.js
+FROM node:alpine
+
+# Définir le répertoire de travail
+WORKDIR /usr/src/app
+
+# Copier les fichiers de l'application
+COPY . /usr/src/app/
+
+# Installer les dépendances
+RUN npm install -g @angular/cli
+RUN npm install
+
+# Exposer le port sur lequel l'application s'exécute
+EXPOSE 4200
+
+# Définir la commande pour exécuter l'application
+CMD ["ng", "serve", "--host", "0.0.0.0"]
